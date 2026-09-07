@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 30" width="30" height="30">
+  <!-- A rubber stamp over the impression it leaves: a handle, the block, and a tile it stamped. -->
+  <rect x="12" y="3" width="6" height="7" rx="1.5" fill="#c8d0dc"/>
+  <path d="M7 12.5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2V16H7z" fill="#e6b95c"/>
+  <rect x="5" y="16" width="20" height="3" rx="1" fill="#a9853c"/>
+  <rect x="8" y="22" width="14" height="5" rx="1" fill="#4fd1c5" opacity=".9"/>
+  <rect x="11" y="24" width="8" height="1.5" fill="#0a0c10" opacity=".55"/>
+</svg>
