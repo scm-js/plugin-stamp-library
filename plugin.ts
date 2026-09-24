@@ -687,16 +687,36 @@ class StampLibrary {
     void api.tileset.load().then(() => this.refresh());
   }
 
-  /** Close and reopen the panel on the other side of the dock line. */
+  /** Close and reopen the panel on the other side of the dock line; a closed panel opens there next time. */
   private moving = false;
   setDock(dock: Settings["dock"]): void {
     if (this.settings.dock === dock) return;
     this.settings.dock = dock;
     this.save();
+    if (!this.panel?.isOpen()) return;
     this.moving = true;
-    this.panel?.close();
+    this.panel.close();
     this.moving = false;
     this.openPanel();
+  }
+
+  /** The plugin's page under Edit ▸ Preferences ▸ Plugins: where the panel opens. Written on OK or Apply. */
+  preferencesPage(): void {
+    const api = this.api;
+    const w = api.ui.widgets;
+    let dock: HTMLSelectElement | null = null;
+    api.ui.preferencesPage({
+      mount: (body) => {
+        dock = w.select([{ value: "float", label: "Floating over the map" }, { value: "right", label: "Docked on the right" }], { value: this.settings.dock });
+        body.append(
+          w.form([{ label: "Panel", field: dock }]),
+          w.hint("A floating panel is dragged about and resized from its corner; a docked one sits in the right dock with Minimap, Layers and Properties. The Dock and Float button at the bottom of the panel does the same."),
+        );
+        return () => { dock = null; };
+      },
+      apply: () => { if (dock) this.setDock(dock.value === "right" ? "right" : "float"); },
+      reset: () => { if (dock) dock.value = DEFAULT_SETTINGS.dock; },
+    });
   }
 
   togglePanel(): void {
@@ -923,6 +943,8 @@ export default function activate(api: PluginApi): () => void {
   api.events.on("selection", () => lib.footerChanged());
   api.events.on("clipboard", () => lib.footerChanged());
   api.events.on("layer", () => lib.footerChanged());
+
+  lib.preferencesPage();
 
   if (lib.settings.open) lib.openPanel();
   // Every registration above is swept by the editor when the plugin is turned off; this is the rest.

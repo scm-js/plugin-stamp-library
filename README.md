@@ -40,7 +40,8 @@ is off. To pin a version, add a ref: `github:scm-js/plugin-stamp-library@v1.0.0`
 **Tools ▸ Stamp Library…** (also `Ctrl+Shift+L`, or *Stamp Library…* on the map's
 right-click menu) opens the **Stamps** panel. It floats over the map and can be dragged
 and resized; press **Dock** at its bottom to put it in the right dock with Minimap, Layers
-and Properties instead, and **Float** to take it out again.
+and Properties instead, and **Float** to take it out again. The same choice is on the
+plugin's page in **Edit ▸ Preferences ▸ Plugins ▸ Stamp Library**.
 
 ### Saving a stamp
 
