@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Clip } from "@scm-js/plugin-api";
 import {
-  allTags, base64ToU16, contentsOf, decodeShare, decodeStamp, encodeShare, encodeStamp, filterStamps, makeStamp, newId, normalizeTags, parseTags, partsOf,
-  planMerge, snapToLattice, sortStamps, stampSummary, storedSize, u16ToBase64, uniqueName,
+  allTags, base64ToU16, decodeShare, decodeStamp, encodeShare, encodeStamp, filterStamps, makeStamp, newId, normalizeTags, parseTags, partsOf,
+  planMerge, snapToLattice, sortStamps, storedSize, u16ToBase64, uniqueName,
 } from "../library";
 
 function clip(width = 3, height = 2, era = 4, extra: Partial<Clip> = {}): Clip {
@@ -27,9 +27,6 @@ describe("stamps", () => {
   it("says what a clip holds", () => {
     const c = clip(3, 2, 6, { units: [unit(10, 10)], doodads: [{ doodadId: 1, x: 0, y: 0, owner: 0, disabled: 0 }] });
     expect(partsOf(c)).toEqual({ terrain: true, doodads: true, units: true, sprites: false, locations: false, fog: false });
-    expect(contentsOf(c)).toBe("terrain · 1 doodad · 1 unit");
-    expect(stampSummary(makeStamp("x", c))).toBe("3 × 2 · Ice");
-    expect(contentsOf(clip(1, 1, 0, { tiles: null, ground: null, sprites: [{ spriteId: 1, x: 0, y: 0, owner: 0, unused: 0, flags: 0 }, { spriteId: 2, x: 0, y: 0, owner: 0, unused: 0, flags: 0 }] }))).toBe("2 sprites");
   });
 });
 
@@ -156,9 +153,9 @@ describe("the codec", () => {
     expect(mixed).toMatchObject({ skipped: 1 });
     expect(decodeShare("not json")).toEqual({ error: "This is not JSON." });
     expect(decodeShare("{}")).toEqual({ error: "There are no stamps in this file." });
-    expect(decodeShare(JSON.stringify({ format: "other", stamps: [] }))).toMatchObject({ error: expect.stringContaining("other") });
+    expect(decodeShare(JSON.stringify({ format: "other", stamps: [] }))).toMatchObject({ params: { format: "other" } });
     expect(decodeShare(JSON.stringify({ format: "scmjs-stamps", version: 9, stamps: [] }))).toMatchObject({ error: expect.stringContaining("newer") });
-    expect(decodeShare(JSON.stringify({ format: "scmjs-stamps", version: 1, stamps: [{ bad: true }] }))).toMatchObject({ error: expect.stringContaining("None of the 1 record") });
+    expect(decodeShare(JSON.stringify({ format: "scmjs-stamps", version: 1, stamps: [{ bad: true }] }))).toMatchObject({ error: expect.stringContaining("None of the"), params: { n: 1 } });
   });
 
   it("plans a merge by id", () => {

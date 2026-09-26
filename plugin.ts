@@ -20,12 +20,14 @@
 import type {
   Clip, ClipParts, ClipSource, MapPointer, MapToolHandle, MapView, PanelHandle, PasteMode, PluginApi, PluginImage, Rect,
 } from "@scm-js/plugin-api";
+import { bindLanguage, msg, t, translate } from "./i18n";
+import { KO } from "./ko";
 import {
-  allTags, contentsOf, decodeShare, encodeShare, filterStamps, formatSize, makeStamp, newId, parseTags, partsOf, planMerge, snapToLattice, sortStamps, SORTS,
-  stampSummary, storedSize, tilesetName, uniqueName, type SortBy, type Stamp,
+  allTags, decodeShare, encodeShare, filterStamps, formatSize, makeStamp, newId, parseTags, partsOf, planMerge, snapToLattice, sortStamps, SORTS,
+  storedSize, tilesetName, uniqueName, type SortBy, type Stamp,
 } from "./library";
 
-const VERSION = "1.0.0";
+const VERSION = "1.2.0";
 const TILE = 32;
 
 /* ── DOM helpers ────────────────────────────────────────── */
@@ -126,9 +128,30 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 const PART_LABELS: { key: keyof ClipParts; label: string }[] = [
-  { key: "terrain", label: "Terrain" }, { key: "doodads", label: "Doodads" }, { key: "units", label: "Units" },
-  { key: "sprites", label: "Sprites" }, { key: "locations", label: "Locations" }, { key: "fog", label: "Fog" },
+  { key: "terrain", label: msg("Terrain") }, { key: "doodads", label: msg("Doodads") }, { key: "units", label: msg("Units") },
+  { key: "sprites", label: msg("Sprites") }, { key: "locations", label: msg("Locations") }, { key: "fog", label: msg("Fog") },
 ];
+
+/** The tileset's name in the reader's language. */
+const tilesetLabel = (era: number): string => translate(tilesetName(era));
+
+/** `12 × 8 · Jungle`. */
+function stampSummary(stamp: Stamp): string {
+  return `${stamp.clip.width} × ${stamp.clip.height} · ${tilesetLabel(stamp.clip.era)}`;
+}
+
+/** What is in a clip, in words — `3 doodads · 2 units`; empty for nothing at all. */
+function contentsOf(clip: Clip): string {
+  const n = (count: number, text: string | null) => (count === 0 ? null : text);
+  return [
+    clip.tiles ? t("terrain") : null,
+    n(clip.doodads.length, t("{n, plural, one {# doodad} other {# doodads}}", { n: clip.doodads.length })),
+    n(clip.units.length, t("{n, plural, one {# unit} other {# units}}", { n: clip.units.length })),
+    n(clip.sprites.length, t("{n, plural, one {# sprite} other {# sprites}}", { n: clip.sprites.length })),
+    n(clip.locations.length, t("{n, plural, one {# location} other {# locations}}", { n: clip.locations.length })),
+    clip.fog ? t("fog") : null,
+  ].filter((p): p is string => p !== null).join(" · ");
+}
 
 /** Every part, for capturing: the user chooses what to lay down when stamping, so nothing is left out at save time. */
 const ALL_PARTS: ClipParts = { terrain: true, doodads: true, units: true, sprites: true, locations: true, fog: true };
@@ -221,8 +244,8 @@ class Library {
     if (this.warned) return;
     this.warned = true;
     this.api.ui.toast({
-      kind: "warn", title: `“${stamp.name}” could not be kept in the browser's storage`,
-      detail: `The browser refused the write — its storage is nearly full (the library is ${formatSize(this.size())}). The stamp stays until the editor closes; export the library to a file to keep it.`,
+      kind: "warn", title: t("“{name}” could not be kept in the browser's storage", { name: stamp.name }),
+      detail: t("The browser refused the write — its storage is nearly full (the library is {size}). The stamp stays until the editor closes; export the library to a file to keep it.", { size: formatSize(this.size()) }),
       ttl: 0,
     });
   }
@@ -336,7 +359,7 @@ class StampLibrary {
   captureSource(): { source: ClipSource; origin: { x: number; y: number } | null; label: string } | null {
     if (!this.api.document.isOpen()) return null;
     const rect = this.api.selection.markedArea();
-    if (rect) return { source: { rect }, origin: { x: rect.x0, y: rect.y0 }, label: `the marked ${rect.x1 - rect.x0} × ${rect.y1 - rect.y0} area` };
+    if (rect) return { source: { rect }, origin: { x: rect.x0, y: rect.y0 }, label: t("the marked {w} × {h} area", { w: rect.x1 - rect.x0, h: rect.y1 - rect.y0 }) };
     const layer = this.api.selection.layer();
     const sel = layer === "units" ? { units: this.api.selection.units() }
       : layer === "sprites" ? { sprites: this.api.selection.sprites() }
@@ -346,14 +369,18 @@ class StampLibrary {
     if (!sel) return null;
     const n = Object.values(sel)[0]?.length ?? 0;
     if (n === 0) return null;
-    return { source: sel, origin: null, label: `the ${n} selected ${layer === "locations" ? "location" : layer.slice(0, -1)}${n === 1 ? "" : "s"}` };
+    const label = layer === "units" ? t("{n, plural, one {the selected unit} other {the # selected units}}", { n })
+      : layer === "sprites" ? t("{n, plural, one {the selected sprite} other {the # selected sprites}}", { n })
+      : layer === "doodads" ? t("{n, plural, one {the selected doodad} other {the # selected doodads}}", { n })
+      : t("{n, plural, one {the selected location} other {the # selected locations}}", { n });
+    return { source: sel, origin: null, label };
   }
 
   saveFromMap(): void {
     const src = this.captureSource();
     const clip = src ? this.api.clipboard.capture(src.source, { parts: ALL_PARTS }) : null;
     if (!src || !clip) {
-      this.api.ui.toast({ kind: "info", title: "Nothing to save as a stamp", detail: "Mark an area on the Cut / Copy / Paste layer, or select units, sprites, doodads or locations on their layer, then try again." });
+      this.api.ui.toast({ kind: "info", title: t("Nothing to save as a stamp"), detail: t("Mark an area on the Cut / Copy / Paste layer, or select units, sprites, doodads or locations on their layer, then try again.") });
       return;
     }
     void this.editDialog(null, clip, src.origin);
@@ -362,7 +389,7 @@ class StampLibrary {
   saveFromClipboard(): void {
     const clip = this.api.clipboard.clip();
     if (!clip) {
-      this.api.ui.toast({ kind: "info", title: "The clipboard is empty", detail: "Copy something on the map first (Ctrl+C), then save it as a stamp." });
+      this.api.ui.toast({ kind: "info", title: t("The clipboard is empty"), detail: t("Copy something on the map first (Ctrl+C), then save it as a stamp.") });
       return;
     }
     // The marked area is usually where the clip was copied from; when it is the clip's size, take it as the origin.
@@ -379,7 +406,7 @@ class StampLibrary {
     const era = this.era();
     const foreign = era !== null && stamp.clip.era !== era;
     if (foreign && !stamp.clip.units.length && !stamp.clip.sprites.length && !stamp.clip.locations.length && !stamp.clip.fog) {
-      api.ui.toast({ kind: "info", title: `“${stamp.name}” is a ${tilesetName(stamp.clip.era)} piece`, detail: `Its tiles mean something else on ${tilesetName(era)}. Open a ${tilesetName(stamp.clip.era)} map to lay it down.` });
+      api.ui.toast({ kind: "info", title: t("“{name}” is a {tileset} piece", { name: stamp.name, tileset: tilesetLabel(stamp.clip.era) }), detail: t("Its tiles mean something else on {other}. Open a {tileset} map to lay it down.", { other: tilesetLabel(era), tileset: tilesetLabel(stamp.clip.era) }) });
       return;
     }
     this.tool?.stop();
@@ -390,8 +417,9 @@ class StampLibrary {
     const info = api.document.info();
     const mapW = info?.width ?? 0, mapH = info?.height ?? 0;
     const tool = api.ui.mapTool({
-      name: `Stamp: ${stamp.name}`,
-      hint: foreign ? `click to lay down its objects · its ${tilesetName(stamp.clip.era)} terrain stays off` : `click to lay it down${stamp.origin && this.settings.snap ? " · Shift for free placement" : ""}`,
+      name: t("Stamp: {name}", { name: stamp.name }),
+      hint: foreign ? t("click to lay down its objects · its {tileset} terrain stays off", { tileset: tilesetLabel(stamp.clip.era) })
+        : stamp.origin && this.settings.snap ? t("click to lay it down · Shift for free placement") : t("click to lay it down"),
       cursor: "copy",
       onMove: (p) => { hover = p.inMap ? place(p) : null; tool.redraw(); },
       onDown: (p) => { this.stamp(stamp, place(p)); },
@@ -438,7 +466,7 @@ class StampLibrary {
     const has = partsOf(stamp.clip);
     const parts: ClipParts = { ...has };
     for (const p of PART_LABELS) parts[p.key] = has[p.key] && this.settings.parts[p.key];
-    const r = this.api.document.edit(`Stamp ${stamp.name}`, (tx) => tx.paste(stamp.clip, at.x, at.y, { parts, mode: this.settings.mode }));
+    const r = this.api.document.edit(t("Stamp {name}", { name: stamp.name }), (tx) => tx.paste(stamp.clip, at.x, at.y, { parts, mode: this.settings.mode }));
     if (r.changed) {
       const info = this.api.document.info();
       const rect: Rect = { x0: Math.max(0, at.x), y0: Math.max(0, at.y), x1: Math.min(info?.width ?? Infinity, at.x + stamp.clip.width), y1: Math.min(info?.height ?? Infinity, at.y + stamp.clip.height) };
@@ -448,7 +476,7 @@ class StampLibrary {
       this.lib.update(stamp, false);
     }
     if (r.notes.length > 0) this.api.ui.status(`${stamp.name}: ${r.notes.join("; ")}`);
-    else if (!r.changed) this.api.ui.status(`${stamp.name}: nothing to lay down here`);
+    else if (!r.changed) this.api.ui.status(t("{name}: nothing to lay down here", { name: stamp.name }));
   }
 
   stop(): void { this.tool?.stop(); }
@@ -467,18 +495,21 @@ class StampLibrary {
     return new Promise((resolve) => {
       let settled = false;
       const done = (s: Stamp | null) => { if (!settled) { settled = true; resolve(s); } };
-      const name = w.text({ value: existing?.name ?? uniqueName(this.suggestName(theClip), this.lib.stamps), placeholder: "What the piece is" });
-      const tags = w.text({ value: existing?.tags.join(", ") ?? "", placeholder: "ramp, cliff, north — comma-separated" });
-      const notes = h("textarea", { className: "textarea", placeholder: "Anything worth remembering: where it fits, what to fix after stamping", value: existing?.notes ?? "" });
+      const name = w.text({ value: existing?.name ?? uniqueName(this.suggestName(theClip), this.lib.stamps), placeholder: t("What the piece is") });
+      const tags = w.text({ value: existing?.tags.join(", ") ?? "", placeholder: t("ramp, cliff, north — comma-separated") });
+      const notes = h("textarea", { className: "textarea", placeholder: t("Anything worth remembering: where it fits, what to fix after stamping"), value: existing?.notes ?? "" });
       const known = allTags(this.lib.stamps).map((t) => t.tag);
       const preview = h("div", { className: "stl-preview" });
       const img = api.graphics.renderClip(theClip, { pixelsPerTile: Math.max(1, Math.min(16, Math.floor(400 / Math.max(theClip.width, theClip.height)))) });
-      preview.append(img ? pictureCanvas(img, 440, 200) : h("span", { className: "stl-none" }, this.era() !== null && this.era() !== theClip.era ? `A ${tilesetName(theClip.era)} piece — drawn once a ${tilesetName(theClip.era)} map is open` : "No picture without the tileset graphics"));
+      preview.append(img ? pictureCanvas(img, 440, 200) : h("span", { className: "stl-none" }, this.era() !== null && this.era() !== theClip.era ? t("A {tileset} piece — drawn once a {tileset} map is open", { tileset: tilesetLabel(theClip.era) }) : t("No picture without the tileset graphics")));
       const body = h("div", { className: "stl-dlg" },
         preview,
-        w.hint(`${theClip.width} × ${theClip.height} tiles · ${tilesetName(theClip.era)} · ${contentsOf(theClip) || "empty"}${origin ? ` · copied from (${origin.x}, ${origin.y})` : ""}`),
-        w.form([{ label: "Name", field: name }, { label: "Tags", field: tags }, { label: "Notes", field: notes }]),
-        known.length > 0 ? w.hint(`Tags in use: ${known.slice(0, 12).join(", ")}${known.length > 12 ? ", …" : ""}`) : null,
+        w.hint([
+          t("{w} × {h} tiles", { w: theClip.width, h: theClip.height }), tilesetLabel(theClip.era), contentsOf(theClip) || t("empty"),
+          origin ? t("copied from ({x}, {y})", { x: origin.x, y: origin.y }) : null,
+        ].filter(Boolean).join(" · ")),
+        w.form([{ label: t("Name"), field: name }, { label: t("Tags"), field: tags }, { label: t("Notes"), field: notes }]),
+        known.length > 0 ? w.hint(t("Tags in use: {tags}", { tags: `${known.slice(0, 12).join(", ")}${known.length > 12 ? ", …" : ""}` })) : null,
       );
       const commit = () => {
         const label = name.value.trim();
@@ -488,7 +519,7 @@ class StampLibrary {
           this.lib.add(stamp);
           this.selected = stamp.id;
           this.pictures.request(stamp);
-          api.ui.toast({ kind: "ok", title: `Saved “${stamp.name}”`, detail: stampSummary(stamp) });
+          api.ui.toast({ kind: "ok", title: t("Saved “{name}”", { name: stamp.name }), detail: stampSummary(stamp) });
           this.openPanel();
           done(stamp);
         } else {
@@ -501,7 +532,7 @@ class StampLibrary {
         return true;
       };
       const dlg = api.ui.dialog({
-        title: isNew ? "Save as Stamp" : `Edit “${existing.name}”`,
+        title: isNew ? t("Save as Stamp") : t("Edit “{name}”", { name: existing.name }),
         size: "md",
         mount: (el) => {
           el.append(body);
@@ -511,8 +542,8 @@ class StampLibrary {
           return () => { el.removeEventListener("keydown", onKey); done(null); };
         },
         buttons: [
-          { label: "Cancel" },
-          { label: isNew ? "Save" : "OK", primary: true, run: () => commit() },
+          { label: t("Cancel") },
+          { label: isNew ? t("Save") : t("OK"), primary: true, run: () => commit() },
         ],
       });
     });
@@ -520,25 +551,28 @@ class StampLibrary {
 
   /** `Jungle piece 12 × 8`, or `3 units`, for a fresh stamp's name field. */
   private suggestName(clip: Clip): string {
-    if (clip.tiles) return `${tilesetName(clip.era)} piece ${clip.width} × ${clip.height}`;
+    if (clip.tiles) return t("{tileset} piece {w} × {h}", { tileset: tilesetLabel(clip.era), w: clip.width, h: clip.height });
     const c = contentsOf(clip);
-    return c ? c.split(" · ")[0].replace(/^\w/, (m) => m.toUpperCase()) : "New stamp";
+    return c ? c.split(" · ")[0].replace(/^\w/, (m) => m.toUpperCase()) : t("New stamp");
   }
 
   async replaceContents(stamp: Stamp): Promise<void> {
     const src = this.captureSource();
     const clip = src ? this.api.clipboard.capture(src.source, { parts: ALL_PARTS }) : null;
     if (!src || !clip) {
-      this.api.ui.toast({ kind: "info", title: "Nothing to replace it with", detail: "Mark an area or select objects on the map first." });
+      this.api.ui.toast({ kind: "info", title: t("Nothing to replace it with"), detail: t("Mark an area or select objects on the map first.") });
       return;
     }
-    const ok = await this.api.ui.confirm(`Replace what “${stamp.name}” holds with ${src.label} (${clip.width} × ${clip.height}, ${tilesetName(clip.era)})? Its name, tags and notes stay.`, { title: "Replace contents", confirmLabel: "Replace" });
+    const ok = await this.api.ui.confirm(
+      t("Replace what “{name}” holds with {what} ({w} × {h}, {tileset})? Its name, tags and notes stay.", { name: stamp.name, what: src.label, w: clip.width, h: clip.height, tileset: tilesetLabel(clip.era) }),
+      { title: t("Replace contents"), confirmLabel: t("Replace") },
+    );
     if (!ok) return;
     stamp.clip = clip;
     stamp.origin = src.origin;
     this.pictures.invalidate(stamp.id);
     this.lib.update(stamp);
-    this.api.ui.toast({ kind: "ok", title: `“${stamp.name}” updated`, detail: stampSummary(stamp) });
+    this.api.ui.toast({ kind: "ok", title: t("“{name}” updated", { name: stamp.name }), detail: stampSummary(stamp) });
   }
 
   duplicate(stamp: Stamp): void {
@@ -549,7 +583,7 @@ class StampLibrary {
   }
 
   async remove(stamp: Stamp): Promise<void> {
-    const ok = await this.api.ui.confirm(`Delete “${stamp.name}” from the library? This cannot be undone.`, { title: "Delete stamp", confirmLabel: "Delete", danger: true });
+    const ok = await this.api.ui.confirm(t("Delete “{name}” from the library? This cannot be undone.", { name: stamp.name }), { title: t("Delete stamp"), confirmLabel: t("Delete"), danger: true });
     if (!ok) return;
     if (this.active === stamp) this.stop();
     if (this.selected === stamp.id) this.selected = null;
@@ -563,18 +597,18 @@ class StampLibrary {
     const text = encodeShare([stamp], { generator: `Stamp Library ${VERSION}` });
     try {
       await navigator.clipboard.writeText(text);
-      this.api.ui.toast({ kind: "ok", title: `“${stamp.name}” copied as text`, detail: `${formatSize(text.length)}. Paste it to anyone with the editor; they add it with From text… in the Stamp Library panel.` });
+      this.api.ui.toast({ kind: "ok", title: t("“{name}” copied as text", { name: stamp.name }), detail: t("{size}. Paste it to anyone with the editor; they add it with From text… in the Stamp Library panel.", { size: formatSize(text.length) }) });
     } catch {
       // No clipboard permission: show it in a dialog to copy by hand.
       const area = h("textarea", { className: "textarea", readOnly: true, value: text, style: "height: 140px; font-family: var(--font-mono); font-size: 10.5px" });
-      this.api.ui.dialog({ title: `“${stamp.name}” as text`, size: "md", mount: (el) => { el.append(this.api.ui.widgets.hint("The browser would not write to the clipboard; select all and copy."), area); setTimeout(() => area.select(), 0); } });
+      this.api.ui.dialog({ title: t("“{name}” as text", { name: stamp.name }), size: "md", mount: (el) => { el.append(this.api.ui.widgets.hint(t("The browser would not write to the clipboard; select all and copy.")), area); setTimeout(() => area.select(), 0); } });
     }
   }
 
   async fromText(): Promise<void> {
-    const text = await this.api.ui.prompt("Paste the text of a stamp (or a whole library file) here.", { title: "Add stamps from text", multiline: true, confirmLabel: "Add" });
+    const text = await this.api.ui.prompt(t("Paste the text of a stamp (or a whole library file) here."), { title: t("Add stamps from text"), multiline: true, confirmLabel: t("Add") });
     if (text === null || !text.trim()) return;
-    await this.importText(text, "the text");
+    await this.importText(text, t("the text"));
   }
 
   async importFiles(): Promise<void> {
@@ -585,7 +619,7 @@ class StampLibrary {
   async importText(text: string, from: string): Promise<void> {
     const r = decodeShare(text);
     if ("error" in r) {
-      this.api.ui.toast({ kind: "error", title: `Could not read ${from}`, detail: r.error });
+      this.api.ui.toast({ kind: "error", title: t("Could not read {from}", { from }), detail: translate(r.error, r.params) });
       return;
     }
     let plan = planMerge(this.lib.stamps, r.stamps, false);
@@ -596,15 +630,20 @@ class StampLibrary {
       plan = planMerge(this.lib.stamps, r.stamps, replace);
     }
     if (plan.added.length + plan.replaced.length === 0) {
-      this.api.ui.toast({ kind: "info", title: "Nothing new", detail: `Every stamp in ${from} is already in the library.` });
+      this.api.ui.toast({ kind: "info", title: t("Nothing new"), detail: t("Every stamp in {from} is already in the library.", { from }) });
       return;
     }
     for (const s of plan.replaced) this.pictures.invalidate(s.id);
     this.lib.merge(plan.added, plan.replaced);
     for (const s of [...plan.added, ...plan.replaced]) this.pictures.request(s);
     if (plan.added[0]) this.selected = plan.added[0].id;
-    const bits = [plan.added.length > 0 ? `${plan.added.length} added` : null, plan.replaced.length > 0 ? `${plan.replaced.length} replaced` : null, plan.skipped.length > 0 ? `${plan.skipped.length} already here` : null, r.skipped > 0 ? `${r.skipped} unreadable` : null].filter(Boolean);
-    this.api.ui.toast({ kind: "ok", title: `Imported from ${from}`, detail: bits.join(" · ") });
+    const bits = [
+      plan.added.length > 0 ? t("{n} added", { n: plan.added.length }) : null,
+      plan.replaced.length > 0 ? t("{n} replaced", { n: plan.replaced.length }) : null,
+      plan.skipped.length > 0 ? t("{n} already here", { n: plan.skipped.length }) : null,
+      r.skipped > 0 ? t("{n} unreadable", { n: r.skipped }) : null,
+    ].filter(Boolean);
+    this.api.ui.toast({ kind: "ok", title: t("Imported from {from}", { from }), detail: bits.join(" · ") });
     this.openPanel();
   }
 
@@ -612,19 +651,19 @@ class StampLibrary {
   private askReplace(total: number, dupes: number, from: string): Promise<boolean | null> {
     return new Promise((resolve) => {
       let answer: boolean | null = null;
-      const tick = this.api.ui.widgets.checkbox("Replace them with the file's version", { value: false });
+      const tick = this.api.ui.widgets.checkbox(t("Replace them with the file's version"), { value: false });
       this.api.ui.dialog({
-        title: "Import stamps",
+        title: t("Import stamps"),
         size: "sm",
         mount: (el) => {
           el.append(h("div", { className: "stl-dlg" },
-            h("div", null, `${from} holds ${total} stamp${total === 1 ? "" : "s"}; ${dupes} ${dupes === 1 ? "is" : "are"} already in the library (the same stamp, perhaps edited since).`),
+            h("div", null, t("{from} holds {total, plural, one {# stamp} other {# stamps}}; {dupes, plural, one {# is} other {# are}} already in the library (the same stamp, perhaps edited since).", { from, total, dupes })),
             tick,
-            this.api.ui.widgets.hint("Unticked, those are left as they are and only the new ones come in."),
+            this.api.ui.widgets.hint(t("Unticked, those are left as they are and only the new ones come in.")),
           ));
           return () => resolve(answer);
         },
-        buttons: [{ label: "Cancel" }, { label: "Import", primary: true, run: () => { answer = tick.input.checked; } }],
+        buttons: [{ label: t("Cancel") }, { label: t("Import"), primary: true, run: () => { answer = tick.input.checked; } }],
       });
     });
   }
@@ -632,33 +671,33 @@ class StampLibrary {
   async exportDialog(shown: Stamp[]): Promise<void> {
     const all = this.lib.stamps;
     if (all.length === 0) {
-      this.api.ui.toast({ kind: "info", title: "The library is empty", detail: "Save a stamp first." });
+      this.api.ui.toast({ kind: "info", title: t("The library is empty"), detail: t("Save a stamp first.") });
       return;
     }
     const selected = this.selected ? this.lib.byId(this.selected) ?? null : null;
     const w = this.api.ui.widgets;
-    const choices: { id: string; label: string; stamps: Stamp[] }[] = [{ id: "all", label: `The whole library (${all.length})`, stamps: all }];
-    if (shown.length !== all.length && shown.length > 0) choices.push({ id: "shown", label: `The ${shown.length} shown by the current search`, stamps: shown });
-    if (selected) choices.push({ id: "one", label: `Only “${selected.name}”`, stamps: [selected] });
+    const choices: { id: string; label: string; stamps: Stamp[] }[] = [{ id: "all", label: t("The whole library ({n})", { n: all.length }), stamps: all }];
+    if (shown.length !== all.length && shown.length > 0) choices.push({ id: "shown", label: t("The {n} shown by the current search", { n: shown.length }), stamps: shown });
+    if (selected) choices.push({ id: "one", label: t("Only “{name}”", { name: selected.name }), stamps: [selected] });
     let pick = choices[0];
     const radios = choices.map((c) => w.checkbox(c.label, { radio: true, name: "stl-export", value: c === pick, onChange: () => { pick = c; } }));
-    const pretty = w.checkbox("Readable JSON (larger)", { value: false });
+    const pretty = w.checkbox(t("Readable JSON (larger)"), { value: false });
     await new Promise<void>((resolve) => {
       this.api.ui.dialog({
-        title: "Export stamps",
+        title: t("Export stamps"),
         size: "sm",
         mount: (el) => {
-          el.append(h("div", { className: "stl-dlg" }, w.column(...radios), pretty, w.hint("A JSON file anyone can import into their own library — with Import… in the panel, or by dropping it onto the panel.")));
+          el.append(h("div", { className: "stl-dlg" }, w.column(...radios), pretty, w.hint(t("A JSON file anyone can import into their own library — with Import… in the panel, or by dropping it onto the panel."))));
           return () => resolve();
         },
         buttons: [
-          { label: "Cancel" },
-          { label: "Export…", primary: true, run: async () => {
+          { label: t("Cancel") },
+          { label: t("Export…"), primary: true, run: async () => {
             const text = encodeShare(pick.stamps, { generator: `Stamp Library ${VERSION}`, pretty: pretty.input.checked });
             const stem = pick.stamps.length === 1 ? pick.stamps[0].name.replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "stamp" : "stamps";
             const name = `${stem}-${new Date().toISOString().slice(0, 10)}.json`;
             const where = await this.api.ui.saveFile(new Blob([text], { type: "application/json" }), name);
-            if (where) this.api.ui.toast({ kind: "ok", title: `Exported ${pick.stamps.length} stamp${pick.stamps.length === 1 ? "" : "s"}`, detail: `${where.fileName} · ${formatSize(text.length)}` });
+            if (where) this.api.ui.toast({ kind: "ok", title: t("Exported {n, plural, one {# stamp} other {# stamps}}", { n: pick.stamps.length }), detail: `${where.fileName} · ${formatSize(text.length)}` });
           } },
         ],
       });
@@ -674,7 +713,7 @@ class StampLibrary {
     this.save();
     const docked = this.settings.dock === "right";
     this.panel = api.ui.panel({
-      title: "Stamps",
+      title: t("Stamps"),
       ...(docked ? { dock: "right" as const, grow: true } : { width: 340, height: 560, resizable: true }),
       mount: (body) => this.mount(body),
       onClose: () => {
@@ -689,6 +728,17 @@ class StampLibrary {
 
   /** Close and reopen the panel on the other side of the dock line; a closed panel opens there next time. */
   private moving = false;
+
+  /** The language changed: build the panel again in it, where it was. */
+  relabel(): void {
+    document.querySelector(".stl-menu")?.remove();
+    if (!this.panel?.isOpen()) return;
+    this.moving = true;
+    this.panel.close();
+    this.moving = false;
+    this.openPanel();
+  }
+
   setDock(dock: Settings["dock"]): void {
     if (this.settings.dock === dock) return;
     this.settings.dock = dock;
@@ -707,10 +757,10 @@ class StampLibrary {
     let dock: HTMLSelectElement | null = null;
     api.ui.preferencesPage({
       mount: (body) => {
-        dock = w.select([{ value: "float", label: "Floating over the map" }, { value: "right", label: "Docked on the right" }], { value: this.settings.dock });
+        dock = w.select([{ value: "float", label: t("Floating over the map") }, { value: "right", label: t("Docked on the right") }], { value: this.settings.dock });
         body.append(
-          w.form([{ label: "Panel", field: dock }]),
-          w.hint("A floating panel is dragged about and resized from its corner; a docked one sits in the right dock with Minimap, Layers and Properties. The Dock and Float button at the bottom of the panel does the same."),
+          w.form([{ label: t("Panel"), field: dock }]),
+          w.hint(t("A floating panel is dragged about and resized from its corner; a docked one sits in the right dock with Minimap, Layers and Properties. The Dock and Float button at the bottom of the panel does the same.")),
         );
         return () => { dock = null; };
       },
@@ -729,11 +779,11 @@ class StampLibrary {
     const s = this.settings;
     body.append(h("style", null, STYLE));
 
-    const search = w.text({ placeholder: "Search names, tags, notes", value: this.query, onChange: (v) => { this.query = v; render(); } });
+    const search = w.text({ placeholder: t("Search names, tags, notes"), value: this.query, onChange: (v) => { this.query = v; render(); } });
     search.classList.add("input");
-    const sort = w.select(SORTS.map((o) => ({ value: o.id, label: o.label })), { value: s.sort, onChange: (v) => { s.sort = v as SortBy; this.save(); render(); } });
-    sort.title = "Order";
-    const thisTileset = w.checkbox("This tileset only", { value: s.thisTileset, onChange: (v) => { s.thisTileset = v; this.save(); render(); } });
+    const sort = w.select(SORTS.map((o) => ({ value: o.id, label: translate(o.label) })), { value: s.sort, onChange: (v) => { s.sort = v as SortBy; this.save(); render(); } });
+    sort.title = t("Order");
+    const thisTileset = w.checkbox(t("This tileset only"), { value: s.thisTileset, onChange: (v) => { s.thisTileset = v; this.save(); render(); } });
     const count = h("span", { className: "grow", style: "text-align: right" });
     const tagsRow = h("div", { className: "stl-tags" });
     const grid = h("div", { className: "stl-grid" });
@@ -743,9 +793,9 @@ class StampLibrary {
     const summary = h("span", { className: "stl-dim" });
     const contents = h("div", { className: "stl-dim" });
     const notesEl = h("div", { className: "stl-notes" });
-    const stampBtn = w.button("Stamp", { primary: true, onClick: () => { const st = this.current(); if (!st) return; if (this.active === st) this.stop(); else this.start(st); } });
-    const editBtn = w.button("Edit…", { onClick: () => { const st = this.current(); if (st) void this.editDialog(st, null, st.origin); } });
-    const moreBtn = w.button("More ▾", { onClick: (e) => { const st = this.current(); if (st) this.cardMenu(st, e.clientX, e.clientY); } });
+    const stampBtn = w.button(t("Stamp"), { primary: true, onClick: () => { const st = this.current(); if (!st) return; if (this.active === st) this.stop(); else this.start(st); } });
+    const editBtn = w.button(t("Edit…"), { onClick: () => { const st = this.current(); if (st) void this.editDialog(st, null, st.origin); } });
+    const moreBtn = w.button(t("More ▾"), { onClick: (e) => { const st = this.current(); if (st) this.cardMenu(st, e.clientX, e.clientY); } });
     const detail = h("div", { className: "stl-detail" },
       h("div", { className: "stl-title" }, title, summary),
       contents, notesEl,
@@ -753,12 +803,12 @@ class StampLibrary {
     );
 
     // Stamping options.
-    const modeAdd = w.checkbox("Add to what is there", { radio: true, name: "stl-mode", value: s.mode === "merge", onChange: () => { s.mode = "merge"; this.save(); } });
-    const modeReplace = w.checkbox("Replace the area's objects", { radio: true, name: "stl-mode", value: s.mode === "replace", onChange: () => { s.mode = "replace"; this.save(); } });
-    modeReplace.title = "Units, sprites and doodads inside the stamp's rectangle are removed first. Locations never are.";
-    const snap = w.checkbox("Keep isometric alignment", { value: s.snap, onChange: (v) => { s.snap = v; this.save(); } });
-    snap.title = "Lay a piece down only where it sits on the same isometric lattice it was copied from (every second tile each way). Shift while placing ignores it.";
-    const partTicks = PART_LABELS.map((p) => w.checkbox(p.label, { value: s.parts[p.key], onChange: (v) => { s.parts[p.key] = v; this.save(); } }));
+    const modeAdd = w.checkbox(t("Add to what is there"), { radio: true, name: "stl-mode", value: s.mode === "merge", onChange: () => { s.mode = "merge"; this.save(); } });
+    const modeReplace = w.checkbox(t("Replace the area's objects"), { radio: true, name: "stl-mode", value: s.mode === "replace", onChange: () => { s.mode = "replace"; this.save(); } });
+    modeReplace.title = t("Units, sprites and doodads inside the stamp's rectangle are removed first. Locations never are.");
+    const snap = w.checkbox(t("Keep isometric alignment"), { value: s.snap, onChange: (v) => { s.snap = v; this.save(); } });
+    snap.title = t("Lay a piece down only where it sits on the same isometric lattice it was copied from (every second tile each way). Shift while placing ignores it.");
+    const partTicks = PART_LABELS.map((p) => w.checkbox(translate(p.label), { value: s.parts[p.key], onChange: (v) => { s.parts[p.key] = v; this.save(); } }));
     const opts = h("div", { className: "stl-opts" },
       h("div", { className: "stl-line" }, modeAdd, modeReplace),
       h("div", { className: "stl-line" }, snap),
@@ -766,13 +816,13 @@ class StampLibrary {
     );
 
     // Footer.
-    const saveArea = w.button("Save area…", { onClick: () => this.saveFromMap() });
-    const saveClip = w.button("Save clipboard…", { onClick: () => this.saveFromClipboard() });
-    const importBtn = w.button("Import…", { onClick: () => void this.importFiles() });
-    const textBtn = w.button("From text…", { onClick: () => void this.fromText() });
-    const exportBtn = w.button("Export…", { onClick: () => void this.exportDialog(this.shown()) });
+    const saveArea = w.button(t("Save area…"), { onClick: () => this.saveFromMap() });
+    const saveClip = w.button(t("Save clipboard…"), { onClick: () => this.saveFromClipboard() });
+    const importBtn = w.button(t("Import…"), { onClick: () => void this.importFiles() });
+    const textBtn = w.button(t("From text…"), { onClick: () => void this.fromText() });
+    const exportBtn = w.button(t("Export…"), { onClick: () => void this.exportDialog(this.shown()) });
     const docked = s.dock === "right";
-    const dockBtn = w.button(docked ? "Float" : "Dock", { ghost: true, title: docked ? "Take the panel out of the dock and float it over the map" : "Put the panel in the right dock, with Minimap, Layers and Properties", onClick: () => this.setDock(docked ? "float" : "right") });
+    const dockBtn = w.button(docked ? t("Float") : t("Dock"), { ghost: true, title: docked ? t("Take the panel out of the dock and float it over the map") : t("Put the panel in the right dock, with Minimap, Layers and Properties"), onClick: () => this.setDock(docked ? "float" : "right") });
     const foot = h("div", { className: "stl-foot" }, saveArea, saveClip, h("span", { className: "grow" }), importBtn, textBtn, exportBtn, dockBtn);
 
     body.append(h("div", { className: "stl" },
@@ -796,32 +846,34 @@ class StampLibrary {
       const era = this.era();
       const shown = this.shown();
       const all = this.lib.stamps;
-      count.textContent = all.length === 0 ? "" : shown.length === all.length ? `${all.length} stamp${all.length === 1 ? "" : "s"}` : `${shown.length} of ${all.length}`;
+      count.textContent = all.length === 0 ? "" : shown.length === all.length ? t("{n, plural, one {# stamp} other {# stamps}}", { n: all.length }) : t("{shown} of {all}", { shown: shown.length, all: all.length });
       thisTileset.hidden = era === null;
 
       // Tags: the ones in use, filtering.
       tagsRow.replaceChildren();
       const tags = allTags(all);
       tagsRow.hidden = tags.length === 0;
-      for (const t of tags) {
-        const on = this.tagFilter.includes(t.tag);
-        tagsRow.append(h("button", { className: `stl-tag ${on ? "on" : ""}`, type: "button", title: `${t.count} stamp${t.count === 1 ? "" : "s"}`, onClick: () => {
-          this.tagFilter = on ? this.tagFilter.filter((x) => x !== t.tag) : [...this.tagFilter, t.tag];
+      for (const tag of tags) {
+        const on = this.tagFilter.includes(tag.tag);
+        tagsRow.append(h("button", { className: `stl-tag ${on ? "on" : ""}`, type: "button", title: t("{n, plural, one {# stamp} other {# stamps}}", { n: tag.count }), onClick: () => {
+          this.tagFilter = on ? this.tagFilter.filter((x) => x !== tag.tag) : [...this.tagFilter, tag.tag];
           render();
-        } }, t.tag));
+        } }, tag.tag));
       }
 
       // Cards.
       grid.replaceChildren();
       if (shown.length === 0) {
         const hiddenByTileset = era !== null && s.thisTileset ? filterStamps(all, { query: this.query, tags: this.tagFilter }).filter((st) => st.clip.era !== era) : [];
-        const others = [...new Set(hiddenByTileset.map((st) => tilesetName(st.clip.era)))].join(", ");
+        const others = [...new Set(hiddenByTileset.map((st) => tilesetLabel(st.clip.era)))].join(", ");
         grid.append(h("div", { className: "stl-empty" },
           all.length === 0
-            ? "No stamps yet. Mark an area on the Cut / Copy / Paste layer and press Save area…, or drop a stamps file here."
-            : hiddenByTileset.length > 0
-              ? `${hiddenByTileset.length === all.length ? "Every stamp here" : `${hiddenByTileset.length} stamp${hiddenByTileset.length === 1 ? "" : "s"}`} ${hiddenByTileset.length === 1 ? "is" : "are"} from ${others} — untick This tileset only to see them.`
-              : "Nothing matches. Clear the search or untick the tags.",
+            ? t("No stamps yet. Mark an area on the Cut / Copy / Paste layer and press Save area…, or drop a stamps file here.")
+            : hiddenByTileset.length === all.length
+              ? t("Every stamp here is from {tilesets} — untick This tileset only to see them.", { tilesets: others })
+              : hiddenByTileset.length > 0
+                ? t("{n, plural, one {# stamp is} other {# stamps are}} from {tilesets} — untick This tileset only to see them.", { n: hiddenByTileset.length, tilesets: others })
+                : t("Nothing matches. Clear the search or untick the tags."),
         ));
       }
       for (const st of shown) {
@@ -829,16 +881,16 @@ class StampLibrary {
         const thumbBox = h("div", { className: "stl-thumb" });
         const img = this.pictures.thumb(st);
         if (img) thumbBox.append(pictureCanvas(img, 200, 150));
-        else thumbBox.append(h("div", { className: "stl-none" }, foreign ? tilesetName(st.clip.era) : `${st.clip.width} × ${st.clip.height}`));
-        if (foreign && img) thumbBox.append(h("span", { className: "stl-badge" }, tilesetName(st.clip.era)));
+        else thumbBox.append(h("div", { className: "stl-none" }, foreign ? tilesetLabel(st.clip.era) : `${st.clip.width} × ${st.clip.height}`));
+        if (foreign && img) thumbBox.append(h("span", { className: "stl-badge" }, tilesetLabel(st.clip.era)));
         if (!img && !foreign) this.pictures.request(st);
         const card = h("button", {
           className: `stl-card ${this.selected === st.id ? "sel" : ""} ${this.active === st ? "on" : ""} ${foreign ? "foreign" : ""}`,
           type: "button",
-          title: `${st.name}\n${stampSummary(st)}${st.tags.length ? `\n${st.tags.join(", ")}` : ""}${st.notes ? `\n${st.notes}` : ""}\n\nClick to stamp; right-click for more.`,
+          title: `${st.name}\n${stampSummary(st)}${st.tags.length ? `\n${st.tags.join(", ")}` : ""}${st.notes ? `\n${st.notes}` : ""}\n\n${t("Click to stamp; right-click for more.")}`,
           onClick: () => { this.selected = st.id; if (this.active === st) this.stop(); else this.start(st); },
           onContextmenu: (e: MouseEvent) => { e.preventDefault(); this.selected = st.id; render(); this.cardMenu(st, e.clientX, e.clientY); },
-        }, thumbBox, h("div", { className: "stl-name" }, st.name), h("div", { className: "stl-meta" }, `${st.clip.width} × ${st.clip.height}${st.used > 0 ? ` · used ${st.used}` : ""}`));
+        }, thumbBox, h("div", { className: "stl-name" }, st.name), h("div", { className: "stl-meta" }, `${st.clip.width} × ${st.clip.height}${st.used > 0 ? ` · ${t("used {n}", { n: st.used })}` : ""}`));
         grid.append(card);
       }
 
@@ -848,10 +900,10 @@ class StampLibrary {
       if (sel) {
         title.textContent = sel.name;
         summary.textContent = stampSummary(sel);
-        contents.textContent = `${contentsOf(sel.clip) || "empty"}${sel.tags.length ? ` · ${sel.tags.join(", ")}` : ""}`;
+        contents.textContent = `${contentsOf(sel.clip) || t("empty")}${sel.tags.length ? ` · ${sel.tags.join(", ")}` : ""}`;
         notesEl.textContent = sel.notes;
         notesEl.hidden = !sel.notes;
-        stampBtn.textContent = this.active === sel ? "Stop" : "Stamp";
+        stampBtn.textContent = this.active === sel ? t("Stop") : t("Stamp");
         stampBtn.disabled = !api.document.isOpen();
         const has = partsOf(sel.clip);
         PART_LABELS.forEach((p, i) => { partTicks[i].hidden = !has[p.key]; });
@@ -865,10 +917,10 @@ class StampLibrary {
     const footer = () => {
       const src = this.captureSource();
       saveArea.disabled = src === null;
-      saveArea.title = src ? `Save ${src.label} as a stamp` : "Mark an area on the Cut / Copy / Paste layer, or select objects on their layer";
-      saveArea.textContent = src && "rect" in src.source ? "Save area…" : src ? "Save selection…" : "Save area…";
+      saveArea.title = src ? t("Save {what} as a stamp", { what: src.label }) : t("Mark an area on the Cut / Copy / Paste layer, or select objects on their layer");
+      saveArea.textContent = src && !("rect" in src.source) ? t("Save selection…") : t("Save area…");
       saveClip.disabled = api.clipboard.clip() === null;
-      saveClip.title = saveClip.disabled ? "Copy something first" : `Save the clipboard's ${api.clipboard.summary(api.clipboard.clip()!)} as a stamp`;
+      saveClip.title = saveClip.disabled ? t("Copy something first") : t("Save the clipboard's {what} as a stamp", { what: api.clipboard.summary(api.clipboard.clip()!) });
     };
 
     this.refreshPanel = render;
@@ -896,15 +948,15 @@ class StampLibrary {
       h("button", { type: "button", className: opts.danger ? "danger" : "", disabled: opts.disabled, onClick: () => { close(); run(); } }, label);
     const open = this.api.document.isOpen();
     const menu = h("div", { className: "stl-menu", role: "menu" },
-      item(this.active === stamp ? "Stop stamping" : "Stamp", () => (this.active === stamp ? this.stop() : this.start(stamp)), { disabled: !open }),
-      item("Edit name, tags and notes…", () => void this.editDialog(stamp, null, stamp.origin)),
-      item("Replace contents with the marked area", () => void this.replaceContents(stamp), { disabled: this.captureSource() === null }),
-      item("Duplicate", () => this.duplicate(stamp)),
+      item(this.active === stamp ? t("Stop stamping") : t("Stamp"), () => (this.active === stamp ? this.stop() : this.start(stamp)), { disabled: !open }),
+      item(t("Edit name, tags and notes…"), () => void this.editDialog(stamp, null, stamp.origin)),
+      item(t("Replace contents with the marked area"), () => void this.replaceContents(stamp), { disabled: this.captureSource() === null }),
+      item(t("Duplicate"), () => this.duplicate(stamp)),
       h("div", { className: "sep" }),
-      item("Copy as text", () => void this.copyAsText(stamp)),
-      item("Export to a file…", () => { this.selected = stamp.id; void this.exportDialog([stamp]); }),
+      item(t("Copy as text"), () => void this.copyAsText(stamp)),
+      item(t("Export to a file…"), () => { this.selected = stamp.id; void this.exportDialog([stamp]); }),
       h("div", { className: "sep" }),
-      item("Delete…", () => void this.remove(stamp), { danger: true }),
+      item(t("Delete…"), () => void this.remove(stamp), { danger: true }),
     );
     const close = () => { menu.remove(); document.removeEventListener("pointerdown", onDown, true); document.removeEventListener("keydown", onKey, true); };
     const onDown = (e: PointerEvent) => { if (!menu.contains(e.target as Node)) close(); };
@@ -920,18 +972,21 @@ class StampLibrary {
 /* ── Activation ─────────────────────────────────────────── */
 
 export default function activate(api: PluginApi): () => void {
+  api.i18n.register({ ko: KO });
+  bindLanguage(api);
   const lib = new StampLibrary(api);
 
-  api.commands.register({ id: "open", title: "Stamp Library", run: () => lib.togglePanel() });
-  api.commands.register({ id: "save-area", title: "Save as Stamp", run: () => lib.saveFromMap() });
-  api.commands.register({ id: "save-clipboard", title: "Save Clipboard as Stamp", run: () => lib.saveFromClipboard() });
-  api.commands.register({ id: "import", title: "Import Stamps", run: () => void lib.importFiles() });
-  api.commands.register({ id: "export", title: "Export Stamps", run: () => void lib.exportDialog(lib.shown()) });
+  // Menu labels and command titles go to the editor in English; it shows them in the reader's language.
+  api.commands.register({ id: "open", title: msg("Stamp Library"), run: () => lib.togglePanel() });
+  api.commands.register({ id: "save-area", title: msg("Save as Stamp"), run: () => lib.saveFromMap() });
+  api.commands.register({ id: "save-clipboard", title: msg("Save Clipboard as Stamp"), run: () => lib.saveFromClipboard() });
+  api.commands.register({ id: "import", title: msg("Import Stamps"), run: () => void lib.importFiles() });
+  api.commands.register({ id: "export", title: msg("Export Stamps"), run: () => void lib.exportDialog(lib.shown()) });
 
-  api.menu.add("Tools", { label: "Stamp Library…", shortcut: "Ctrl+Shift+L", icon: "plugin", enabled: () => api.document.isOpen(), command: "open" });
-  api.menu.add("Edit", { label: "Save as Stamp…", shortcut: "Ctrl+Shift+K", after: "Paste", enabled: () => lib.captureSource() !== null, command: "save-area" });
-  api.contextMenu.add("viewport", { label: "Save area as stamp…", visible: (ctx) => ctx.markedArea !== null, command: "save-area" });
-  api.contextMenu.add("viewport", { label: "Stamp Library…", command: "open" });
+  api.menu.add("Tools", { label: msg("Stamp Library…"), shortcut: "Ctrl+Shift+L", icon: "plugin", enabled: () => api.document.isOpen(), command: "open" });
+  api.menu.add("Edit", { label: msg("Save as Stamp…"), shortcut: "Ctrl+Shift+K", after: "Paste", enabled: () => lib.captureSource() !== null, command: "save-area" });
+  api.contextMenu.add("viewport", { label: msg("Save area as stamp…"), visible: (ctx) => ctx.markedArea !== null, command: "save-area" });
+  api.contextMenu.add("viewport", { label: msg("Stamp Library…"), command: "open" });
   api.hotkeys.add("Ctrl+Shift+L", { command: "open" });
   api.hotkeys.add("Ctrl+Shift+K", { command: "save-area" });
 
@@ -943,6 +998,7 @@ export default function activate(api: PluginApi): () => void {
   api.events.on("selection", () => lib.footerChanged());
   api.events.on("clipboard", () => lib.footerChanged());
   api.events.on("layer", () => lib.footerChanged());
+  api.events.on("language", () => lib.relabel());
 
   lib.preferencesPage();
 

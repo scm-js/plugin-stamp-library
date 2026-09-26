@@ -18,14 +18,15 @@
  * clipboard.
  */
 import type { Clip, ClipLocation, ClipParts, DoodadRecord, SpriteRecord, UnitRecord } from "@scm-js/plugin-api";
+import { msg, type Params } from "./i18n";
 
 /* ── Model ───────────────────────────────────────────────── */
 
 export const FORMAT = "scmjs-stamps";
 export const FORMAT_VERSION = 1;
 
-/** ERA index → the tileset's name, as the game orders them. */
-export const TILESET_NAMES = ["Badlands", "Space Platform", "Installation", "Ashworld", "Jungle", "Desert", "Ice", "Twilight"] as const;
+/** ERA index → the tileset's name, as the game orders them (English; `translate` where shown). */
+export const TILESET_NAMES = [msg("Badlands"), msg("Space Platform"), msg("Installation"), msg("Ashworld"), msg("Jungle"), msg("Desert"), msg("Ice"), msg("Twilight")] as const;
 
 export function tilesetName(era: number): string {
   return TILESET_NAMES[era] ?? `Tileset ${era}`;
@@ -107,18 +108,6 @@ export function partsOf(clip: Clip): ClipParts {
   };
 }
 
-/** `12 × 8 · Jungle`. */
-export function stampSummary(stamp: Stamp): string {
-  return `${stamp.clip.width} × ${stamp.clip.height} · ${tilesetName(stamp.clip.era)}`;
-}
-
-/** What is in a clip, in words — `3 doodads · 2 units`; empty for terrain alone. */
-export function contentsOf(clip: Clip): string {
-  const n = (count: number, noun: string) => (count === 0 ? null : `${count} ${noun}${count === 1 ? "" : "s"}`);
-  return [clip.tiles ? "terrain" : null, n(clip.doodads.length, "doodad"), n(clip.units.length, "unit"), n(clip.sprites.length, "sprite"), n(clip.locations.length, "location"), clip.fog ? "fog" : null]
-    .filter((p): p is string => p !== null).join(" · ");
-}
-
 /* ── Tags ────────────────────────────────────────────────── */
 
 /** `"ramp, Cliff ,ramp"` → `["cliff", "ramp"]`: lower-case, trimmed, unique, sorted. */
@@ -170,10 +159,10 @@ export function filterStamps(stamps: readonly Stamp[], filter: Filter): Stamp[] 
 export type SortBy = "recent" | "name" | "size" | "used";
 
 export const SORTS: { id: SortBy; label: string }[] = [
-  { id: "recent", label: "Newest first" },
-  { id: "name", label: "Name" },
-  { id: "size", label: "Size" },
-  { id: "used", label: "Most used" },
+  { id: "recent", label: msg("Newest first") },
+  { id: "name", label: msg("Name") },
+  { id: "size", label: msg("Size") },
+  { id: "used", label: msg("Most used") },
 ];
 
 export function sortStamps(stamps: readonly Stamp[], by: SortBy): Stamp[] {
@@ -343,7 +332,8 @@ export function encodeShare(stamps: readonly Stamp[], options: { now?: string; g
   return JSON.stringify(file, null, options.pretty ? 2 : undefined);
 }
 
-export type DecodeResult = { stamps: Stamp[]; skipped: number } | { error: string };
+/** `error` is English with `params` to fill (`translate(error, params)` where shown). */
+export type DecodeResult = { stamps: Stamp[]; skipped: number } | { error: string; params?: Params };
 
 /**
  * Read a share file, a single stored stamp, or a bare array of them — anything the
@@ -354,23 +344,23 @@ export function decodeShare(text: string): DecodeResult {
   try {
     raw = JSON.parse(text);
   } catch {
-    return { error: "This is not JSON." };
+    return { error: msg("This is not JSON.") };
   }
   let list: unknown[];
   if (Array.isArray(raw)) list = raw;
   else if (isObj(raw) && Array.isArray(raw.stamps)) {
-    if (raw.format !== undefined && raw.format !== FORMAT) return { error: `This is a "${String(raw.format)}" file, not a stamp library.` };
-    if (typeof raw.version === "number" && raw.version > FORMAT_VERSION) return { error: `This file was written by a newer version of the plugin (format ${raw.version}); update the plugin to read it.` };
+    if (raw.format !== undefined && raw.format !== FORMAT) return { error: msg("This is a “{format}” file, not a stamp library."), params: { format: String(raw.format) } };
+    if (typeof raw.version === "number" && raw.version > FORMAT_VERSION) return { error: msg("This file was written by a newer version of the plugin (format {version}); update the plugin to read it."), params: { version: raw.version } };
     list = raw.stamps;
   } else if (isObj(raw) && typeof raw.id === "string" && typeof raw.width === "number") list = [raw];
-  else return { error: "There are no stamps in this file." };
+  else return { error: msg("There are no stamps in this file.") };
   const stamps: Stamp[] = [];
   let skipped = 0;
   for (const item of list) {
     const s = decodeStamp(item);
     if (s) stamps.push(s); else skipped++;
   }
-  if (stamps.length === 0 && skipped > 0) return { error: `None of the ${skipped} record${skipped === 1 ? "" : "s"} in this file could be read as a stamp.` };
+  if (stamps.length === 0 && skipped > 0) return { error: msg("None of the {n, plural, one {# record} other {# records}} in this file could be read as a stamp."), params: { n: skipped } };
   return { stamps, skipped };
 }
 

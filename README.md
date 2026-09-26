@@ -125,8 +125,9 @@ another browser or another machine starts empty until you import.
 | `plugin.json` | the manifest the editor reads (name, version, `entry`, `build`, `icon`, the API version it needs) |
 | `plugin.ts` | `activate(api)`: the panel, the dialogs, the stamping tool, the storage mirror |
 | `library.ts` | the pure part: the stamp model, the base64 codec and the share-file format, searching, sorting, tags, the lattice snap |
+| `i18n.ts`, `ko.ts` | the plugin's words in the editor's language: `t()` / `msg()` and the Korean catalogue |
 | `dist/plugin.js` | the bundle the editor loads; `npm run build` writes it, CI commits it |
-| `tests/` | vitest over `library.ts` |
+| `tests/` | vitest over `library.ts`, and a check that `ko.ts` has every string the plugin shows |
 
 Types come from [`@scm-js/plugin-api`](https://github.com/scm-js/plugin-api), a devDependency
 generated from the editor's own `src/plugins/api.ts`; `npm update @scm-js/plugin-api` takes the
