@@ -1,5 +1,5 @@
 /**
- * Stamp Library — a plugin for the scmJS map editor (https://github.com/jeany55/scm-js).
+ * Stamp Library — a plugin for the scmJS map editor (https://github.com/scm-js/scm-js).
  *
  * The pieces a map maker builds once and wants again — a hand-tuned ramp, a bridge with
  * its shores, a cliff corner the brush never draws right, a whole mineral line — kept as
